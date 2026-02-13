@@ -1,27 +1,32 @@
 """
-High School Management System API
-
-A super simple FastAPI application that allows students to view and sign up
-for extracurricular activities at Mergington High School.
+Pytest configuration and fixtures for testing the FastAPI application
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-import os
+import pytest
+import sys
 from pathlib import Path
 
-app = FastAPI(title="Mergington High School API",
-              description="API for viewing and signing up for extracurricular activities")
+# Add the src directory to the path so we can import the app
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-# Mount the static files directory
-current_dir = Path(__file__).parent
-app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
-          "static")), name="static")
+from fastapi.testclient import TestClient
+from app import app, activities
 
-# In-memory activity database
-activities = {
-        # Dictionary mapping activity names to their details
+
+@pytest.fixture
+def client():
+    """Fixture to provide a test client for the FastAPI app"""
+    return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_activities():
+    """
+    Fixture to reset the activities state before each test.
+    This ensures tests don't interfere with each other.
+    """
+    # Reset to initial state
+    initial_state = {
         "Chess Club": {
             "description": "Learn strategies and compete in chess tournaments",
             "schedule": "Fridays, 3:30 PM - 5:00 PM",
@@ -77,36 +82,14 @@ activities = {
             "participants": ["isabella@mergington.edu"]
         }
     }
-
-
-@app.get("/")
-def root():
-    return RedirectResponse(url="/static/index.html")
-
-
-@app.get("/activities")
-def get_activities():
-    return activities
-
-
-@app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
-
-    # Get the specific activity
-    activity = activities[activity_name]
-
-# Validate student is not already signed up
-    if email in activity["participants"]:
-        raise HTTPException(status_code=400, detail="Student already signed up")    
     
-    # Check if activity is full
-    if len(activity["participants"]) >= activity["max_participants"]:
-        raise HTTPException(status_code=400, detail="Activity is full") 
+    # Clear current state
+    activities.clear()
+    # Restore initial state
+    activities.update(initial_state)
     
-    # Add student
-    activity["participants"].append(email)
-    return {"message": f"Signed up {email} for {activity_name}"}
+    yield
+    
+    # Cleanup (reset after test)
+    activities.clear()
+    activities.update(initial_state)
